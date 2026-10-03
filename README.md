@@ -44,52 +44,16 @@ Manually investigating all of these possibilities consumes significant operation
 
 # 💡 The Solution
 
-This project converts that repetitive manual process into an automated **n8n prospect qualification and outreach pipeline**.
+This project converts that repetitive manual process into an automated
+n8n prospect qualification and outreach pipeline.
 
-The workflow does not blindly send an email to every website it discovers.
+## 🔄 Workflow Architecture
 
-Instead, every prospect moves through multiple research, extraction, filtering, and qualification stages.
 
-```text
-Keyword File
-     ↓
-Search for Potential Websites
-     ↓
-Process Prospect
-     ↓
-Website / Page Extraction
-     ↓
-Website Analysis & Qualification
-     ↓
- ┌───────────────────────────────┐
- │        Prospect Result        │
- └───────────────────────────────┘
-          ↓
- ┌────────┼──────────┬───────────────┐
- ↓        ↓          ↓               ↓
-Not      Guest      Email        Qualified
-Allowed  Post Not   Not Found    Prospect
-         Found                         ↓
- ↓        ↓          ↓             AI Analysis
-Skip     Skip       Skip              ↓
-                               Proposal Generation
-                                      ↓
-                               Database Update
-                                      ↓
-                                15-sec Wait
-                                      ↓
-                              Gmail Selection
-                                      ↓
-                                Send Email
-                                      ↓
-                              Update Tracking
-                                      ↓
-                                Next Prospect
-```
 
-This filtering architecture is important because **search result ≠ outreach email**.
+**[Open Full-Size Workflow Diagram](./docs/AI%20Guest%20Post%20Outreach%20Workflow%20chart.png)**
 
-Only prospects that successfully pass the required workflow conditions continue toward proposal generation and email delivery.
+**[View n8n Workflow JSON](./Workflow/guest-post-outreach-sanitized.json)**
 
 ---
 
