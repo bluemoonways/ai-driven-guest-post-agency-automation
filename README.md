@@ -460,68 +460,6 @@ The human operator can therefore spend less time performing repetitive prospect-
 
 ---
 
-# 🔐 Security
-
-The production workflow contains environment-specific configuration and credential references.
-
-For a public GitHub repository, sensitive information should be replaced with placeholders such as:
-
-```text
-YOUR_GOOGLE_SHEET_ID
-YOUR_GEMINI_CREDENTIAL
-YOUR_GMAIL_ACCOUNT_1
-YOUR_GMAIL_ACCOUNT_2
-YOUR_API_KEY
-```
-
-Never commit:
-
-- API keys
-- OAuth secrets
-- Access tokens
-- Private credential IDs
-- Production email credentials
-- Other confidential configuration
-
----
-
-# 📂 Repository Structure
-
-```text
-ai-driven-guest-post-agency-automation/
-│
-├── README.md
-├── workflow/
-│   └── guest-post-outreach-sanitized.json
-├── docs/
-│   └── workflow-diagram.png
-└── .gitignore
-```
-
----
-
-# 🚀 Setup
-
-1. Import the sanitized workflow JSON into n8n.
-2. Configure the required search/API credentials.
-3. Connect Google Gemini.
-4. Configure the required Google Sheet.
-5. Connect the Gmail sender accounts.
-6. Replace placeholder configuration values.
-7. Test the workflow with a small keyword dataset.
-8. Review qualification and outreach rules before production use.
-9. Activate the workflow when configuration is complete.
-
----
-
-# ⚠️ Responsible Use
-
-This project demonstrates the automation architecture used for legitimate Off-Page SEO outreach.
-
-Users deploying it should configure appropriate prospect-selection rules, respect applicable email and data-protection requirements, follow provider sending limits, and avoid unsolicited bulk-email behavior.
-
----
-
 # 🎓 What This Project Demonstrates
 
 This real-world project demonstrates practical experience in:
@@ -557,3 +495,32 @@ It automates the operational journey from:
 **Keyword → Prospect Discovery → Website Research → Qualification → Contact Discovery → Duplicate Protection → AI Classification → Proposal Generation → Controlled Sending → Tracking → Next Prospect**
 
 That is the real-world problem this automation was built to solve.
+## 👨‍💻 Author
+
+**Faheem Abbas**
+
+🤖 AI Automation Specialist | ⚙️ n8n Expert | 🧠 AI Agents | 🚀 AI-Powered Business Automation | 🎯 Lead Generation | 🔗 API Integrations | 📞 Calling Agents
+
+### 📩 Contact
+
+For custom implementation or commercial use, please contact me:
+<br>
+
+<a href="https://wa.me/923002120566">
+  <img src="https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="WhatsApp">
+</a>
+
+<a href="https://www.linkedin.com/in/faheem-abbas-ai-automation-specialist/">
+  <img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
+</a>
+
+<a href="mailto:info.bluemoonways@gmail.com">
+  <img src="https://img.shields.io/badge/Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Gmail">
+</a>
+
+---
+
+## 🌐 Portfolio Link:
+https://bluemoonways.vercel.app/
+<br>
+
