@@ -1,0 +1,2353 @@
+{
+  "name": "Ai outreach Phase 2 + 3 Inline Send",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"q\": {{ JSON.stringify($json.keyword) }},\n  \"num\": 10\n}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5
+            }
+          },
+          "lowercaseHeaders": false
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\nlet idx = 0;   // counter for unique correlation IDs\n\nfor (const item of $input.all()) {\n  const organic = item.json.organic || [];\n  const keyword = item.json.searchParameters?.q || \"\";\n  for (const r of organic) {\n    if (!r.link) continue;\n    const website = r.link\n      .replace(/^https?:\\/\\//, \"\")\n      .replace(/^www\\./, \"\")\n      .split(\"/\")[0];\n\n    // Build homepage URL (protocol + host only)\n    let homepageUrl = \"\";\n    try {\n      const u = new URL(r.link);\n      homepageUrl = `${u.protocol}//${u.host}`;\n    } catch (e) {\n      homepageUrl = `https://${website}`;\n    }\n\n    output.push({\n      json: {\n        keyword,\n        title: r.title,\n        website,\n        url: r.link,          // specific page (contact-us / write-for-us)\n        originalUrl: r.link,  // reference for Website Analyzer node\n        homepageUrl,          // used for homepage fetch\n        snippet: r.snippet || \"\",\n        correlationId: `${idx}-${website}`   // unique ID to safely merge branches later\n      },\n    });\n    idx++;   // increment counter after each item\n  }\n}\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "website search"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nlet results = [];\n\n// Broader keyword list — covers common variations across websites\nconst guestPostKeywords = /write-for-us|write-with-us|guest-post|guest-posting|guest-blog|guest-author|submit-post|submit-article|submit-content|submission-guidelines|submission-guideline|author-guidelines|contributor-guidelines|general-instructions|content-guidelines|contribute|become-author|become-a-contributor|pitch-us|pitch-your|get-published|publish-with-us/i;\n\nfor (let i = 0; i < allItems.length; i++) {\n  const current = allItems[i].json;\n\n  const website = current.website || \"\";\n  const url = current.url || \"\";\n\n  // Title extracted earlier from the homepage\n  const websiteTitle = (current.homeTitle || \"\").trim();\n\n  // Raw HTML of the specific page (used for emails, contact, guest post, social links)\n  const html = (current.data || current.pageData || \"\").substring(0, 300000);\n\n  // --------------------------------------------------\n  // Brand Name — use the full website title, no splitting\n  // --------------------------------------------------\n  let brandName = websiteTitle.trim();\n  if (!brandName) {\n    brandName = website.replace(/^www\\./, \"\").replace(/\\.(com|net|org|io|co|ai)$/i, \"\");\n  }\n\n  // --------------------------------------------------\n  // Extract Emails\n  // --------------------------------------------------\n  const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi;\n  let emails = html.match(emailRegex) || [];\n  emails = [...new Set(emails.map(e => e.toLowerCase()))];\n  emails = emails.filter(email =>\n    !(\n      email.endsWith(\".png\") || email.endsWith(\".jpg\") || email.endsWith(\".jpeg\") ||\n      email.endsWith(\".svg\") || email.endsWith(\".gif\") || email.endsWith(\".webp\") ||\n      email.includes(\"example.com\") || email.includes(\"yourdomain\") || email.includes(\"email.com\") ||\n      email.includes(\"domain.com\") || email.includes(\"yourname\") || email.includes(\"test.com\") ||\n      email.includes(\"sentry.io\") || email.includes(\"wixpress.com\") || email.includes(\"placeholder\")\n    )\n  );\n\n  // --------------------------------------------------\n  // Extract all links once (href + visible anchor text)\n  // --------------------------------------------------\n  const allLinkMatches = [...html.matchAll(/<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)<\\/a>/gis)];\n  const allLinks = allLinkMatches.map(x => ({\n    href: x[1],\n    text: (x[2] || \"\").replace(/<[^>]+>/g, \"\").trim()\n  }));\n\n  // --------------------------------------------------\n  // Contact Links\n  // --------------------------------------------------\n  const contactLinks = allLinks\n    .filter(l => /contact|contact-us|get-in-touch|reach-us/i.test(l.href))\n    .map(l => l.href);\n  const uniqueContact = [...new Set(contactLinks)].map(link => {\n    if (link.startsWith(\"http\")) return link;\n    try { return new URL(link, url).href; } catch { return link; }\n  });\n\n  // --------------------------------------------------\n  // Guest Post Links — check both href AND visible text\n  // --------------------------------------------------\n  const guestLinks = allLinks\n    .filter(l => guestPostKeywords.test(l.href) || guestPostKeywords.test(l.text))\n    .map(l => l.href);\n\n  let uniqueGuest = [...new Set(guestLinks)]\n    .filter(link =>\n      !link.includes(\"wp-json\") &&\n      !link.includes(\"oembed\") &&\n      !link.includes(\"/feed\") &&\n      !link.includes(\"xmlrpc\")\n    )\n    .map(link => {\n      if (link.startsWith(\"http\")) return link;\n      try { return new URL(link, url).href; } catch { return link; }\n    });\n\n  if (uniqueGuest.length > 3) {\n    uniqueGuest = [uniqueGuest[0]];\n  }\n\n  // Fallback 1: current URL itself matches guest post keywords\n  if (uniqueGuest.length === 0 && url && guestPostKeywords.test(url)) {\n    uniqueGuest.push(url);\n  }\n\n  // Fallback 2: current page's own title suggests it IS the guest post page\n  if (uniqueGuest.length === 0 && websiteTitle && guestPostKeywords.test(websiteTitle)) {\n    uniqueGuest.push(url);\n  }\n\n  // --------------------------------------------------\n  // Social Links\n  // --------------------------------------------------\n  function extract(pattern, excludePattern) {\n    const matches = [...html.matchAll(pattern)];\n    for (const m of matches) {\n      if (!excludePattern || !excludePattern.test(m[0])) {\n        return m[0];\n      }\n    }\n    return \"\";\n  }\n\n  const linkedin = extract(/https?:\\/\\/(?:www\\.)?linkedin\\.com\\/[^\\s\"'<>]+/gi);\n  const facebook = extract(/https?:\\/\\/(?:www\\.)?facebook\\.com\\/[^\\s\"'<>]+/gi, /\\/tr\\?|\\/plugins\\/|sharer\\.php|dialog\\/share/i);\n  const twitter = extract(/https?:\\/\\/(?:www\\.)?(?:twitter|x)\\.com\\/[^\\s\"'<>]+/gi, /intent\\/tweet|share\\?/i);\n  const instagram = extract(/https?:\\/\\/(?:www\\.)?instagram\\.com\\/[^\\s\"'<>]+/gi);\n  const youtube = extract(/https?:\\/\\/(?:www\\.)?youtube\\.com\\/[^\\s\"'<>]+/gi);\n\n  const guestPostFound = uniqueGuest.length > 0;\n\n  // --------------------------------------------------\n  // Each email = 1 item; if no email found, still send 1 \"no email\" item\n  // --------------------------------------------------\n  if (emails.length === 0) {\n    results.push({\n      json: {\n        website, brandName, websiteTitle, url, email: \"\",\n        contactLink: uniqueContact.join(\", \"),\n        guestPostLink: uniqueGuest.join(\", \"),\n        guestPostFound,\n        linkedin, facebook, twitter, instagram, youtube,\n        noEmailFound: true,\n        // NEW: single field for Switch node — combines guestPostFound + email presence\n        emailStatus: guestPostFound ? \"email_not_found\" : \"guest_post_not_found\"\n      }\n    });\n  } else {\n    emails.forEach(email => {\n      results.push({\n        json: {\n          website, brandName, websiteTitle, url, email,\n          contactLink: uniqueContact.join(\", \"),\n          guestPostLink: uniqueGuest.join(\", \"),\n          guestPostFound,\n          linkedin, facebook, twitter, instagram, youtube,\n          noEmailFound: false,\n          // NEW: single field for Switch node\n          emailStatus: guestPostFound ? \"email_found\" : \"guest_post_not_found\"\n        }\n      });\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        320
+      ],
+      "id": "REDACTED",
+      "name": "Website Analyzer"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  let email = \"\";\n  if (item.json.email) {\n    email = item.json.email;\n  } else if (Array.isArray(item.json.emails) && item.json.emails.length > 0) {\n    email = item.json.emails[0];\n  }\n\n  const website = item.json.website || \"\";\n\n  return {\n    json: {\n      ...item.json,\n      uniqueId: (website + \"|\" + email).toLowerCase(),\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        320
+      ],
+      "id": "REDACTED",
+      "name": "Unique iD of Email for Duplication"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED",
+              "name": "website",
+              "value": "={{ $json.website }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "url",
+              "value": "={{ $('Page Fields').item.json.url }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "keyword",
+              "value": "={{ $json.keyword }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "data",
+              "value": "={{ $('Page Fields').item.json.data }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "homeTitle",
+              "value": "={{ $json.homeTitle }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        192,
+        320
+      ],
+      "id": "REDACTED",
+      "name": "Filter website+keyword+data"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2030828432,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Unique ID": "={{ $('Duplicate Procetion (website +email)').item.json['Unique ID'] }}",
+            "Status": "=Ready to Send",
+            "Proposal": "={{ $json.Proposal }}",
+            "Brand Name": "={{ $json['Brand Name'] }}",
+            "Category": "={{ $json['Category'] }}"
+          },
+          "matchingColumns": [
+            "Unique ID"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sender Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        576,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "Update Status Email+propasal",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\n// --------------------------------------------------\n// Helper: escape brand name so it can't break the HTML\n// --------------------------------------------------\nfunction escapeHtml(str) {\n  return String(str)\n    .replace(/&/g, \"&amp;\")\n    .replace(/</g, \"&lt;\")\n    .replace(/>/g, \"&gt;\");\n}\n\n// --------------------------------------------------\n// 6 Proposal Templates (HTML formatted) — Guest Post Reseller/Broker model\n// Each template takes (brand, domain, niche) so wording can reference the\n// site's category when available, making every email feel less templated.\n// --------------------------------------------------\nconst templates = [\n  (brand, domain, niche) => `<p>Hi ${brand} team,</p>\n<p>I work with clients who are looking to publish relevant, high-quality articles on niche-relevant websites like <strong>${domain}</strong>${niche ? ` in the ${niche} space` : \"\"}.</p>\n<p>When a client's article matches your site's niche and audience, I'd like to place it on your website with a natural link insertion.</p>\n<p>Could you let me know if you accept this kind of collaboration, and what your process/guidelines are?</p>\n<p>Best regards</p>`,\n\n  (brand, domain, niche) => `<p>Hello ${brand} team,</p>\n<p>I help clients place well-suited, relevant articles on websites within their niche. I came across <strong>${domain}</strong>${niche ? `, and given your focus on ${niche}` : \"\"} I believe it could be a great fit for some of the content I work with.</p>\n<p>If a client's article aligns well with your site's topics and audience, would you be open to publishing it with a link insertion?</p>\n<p>Please let me know your requirements and the next steps.</p>\n<p>Best regards</p>`,\n\n  (brand, domain, niche) => `<p>Hi there,</p>\n<p>I regularly work with clients who need their articles published on relevant, quality websites. <strong>${domain}</strong>${niche ? ` and its ${niche}-focused content` : \"\"} caught my attention as a strong match for some of the content I manage.</p>\n<p>When I have a client with an article suited to your niche, I'd like the opportunity to place it on your site along with a relevant link.</p>\n<p>Could you share how you'd like to proceed, and any guidelines for accepting such content?</p>\n<p>Best regards</p>`,\n\n  (brand, domain, niche) => `<p>Hi ${brand} team,</p>\n<p>I hope this email finds you well. I run a small content placement service, and <strong>${domain}</strong> stood out${niche ? ` as a strong ${niche} resource` : \"\"} while I was researching sites for a current client.</p>\n<p>Would you be open to publishing a well-written, relevant article with a single natural link back to my client's site?</p>\n<p>Happy to share more details or a sample topic if that helps.</p>\n<p>Best regards</p>`,\n\n  (brand, domain, niche) => `<p>Hello,</p>\n<p>I'm reaching out on behalf of clients who are looking for quality placements${niche ? ` in the ${niche} niche` : \"\"}. <strong>${domain}</strong> looks like a solid fit based on your content and audience.</p>\n<p>If you're open to guest contributions with a relevant, non-spammy link, I'd love to know your submission process and any editorial guidelines.</p>\n<p>Best regards</p>`,\n\n  (brand, domain, niche) => `<p>Hi ${brand} team,</p>\n<p>Quick question — do you currently accept guest articles${niche ? ` related to ${niche}` : \"\"} on <strong>${domain}</strong>?</p>\n<p>I work with clients who need their content placed on relevant, well-maintained sites, and yours came up as a good match. Happy to send over topic ideas if you're open to it.</p>\n<p>Best regards</p>`\n];\n\n// --------------------------------------------------\n// Subject line variants — keeps sender emails from looking\n// like a bulk blast with only the brand name swapped out.\n// --------------------------------------------------\nconst subjectTemplates = [\n  (brand) => `Guest Post Opportunity for ${brand}`,\n  (brand) => `Collaboration Idea for ${brand}`,\n  (brand) => `Quick Question about ${brand}`,\n  (brand) => `Content Partnership – ${brand}`,\n  (brand) => `Would ${brand} be open to a guest post?`,\n  (brand) => `Article Placement Idea for ${brand}`\n];\n\nconst dupAll = $('Duplicate Procetion (website +email)').all();\nlet idx = -1;\nfor (const item of $input.all()) {\n  idx++;\n  const dup = (dupAll[idx] && dupAll[idx].json) || {};\n  const data = item.json;\n\n  // AI Agent (with Structured Output Parser) nests its result under \"output\".\n  // Fall back to top-level fields too, in case an earlier node already flattened them.\n  const aiOutput = data.output || {};\n\n  const website   = data[\"Website\"] || data.website || dup[\"Website\"] || \"\";\n  const brandRaw  = aiOutput[\"Brand Name\"] || data[\"Brand Name\"] || website;\n  const brand     = escapeHtml(brandRaw);\n  const niche     = (aiOutput[\"Category\"] || data[\"Category\"] || \"\").trim();\n\n  const rootDomain = website\n    ? `https://${website.replace(/^https?:\\/\\//, \"\").replace(/^www\\./, \"\").split(\"/\")[0]}/`\n    : \"\";\n\n  // Pick a random proposal + subject template independently\n  const proposalIndex = Math.floor(Math.random() * templates.length);\n  const subjectIndex  = Math.floor(Math.random() * subjectTemplates.length);\n\n  const proposal = templates[proposalIndex](brand, rootDomain, niche);\n  const emailSubject = subjectTemplates[subjectIndex](brandRaw);\n\n  results.push({\n    json: {\n      ...data,\n      \"Brand Name\": brandRaw,\n      \"Category\": niche,\n      Proposal: proposal,\n      emailSubject\n    }\n  });\n}\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "Propasal Generator"
+    },
+    {
+      "parameters": {
+        "formTitle": "Ai Outreach Manager",
+        "formDescription": "Automate your Whole Guest Posting Process",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Uplaoad keyword File",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "On form submission",
+      "webhookId": "REDACTED"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "Uplaoad_keyword_File",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2030828432,
+          "mode": "list",
+          "cachedResultName": "Data Base Guest Post",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Unique ID": "={{ $json.uniqueId }}",
+            "Website": "={{ $json.website }}",
+            "Brand Name": "={{ $json.brandName }}",
+            "Emails": "={{ $json.email }}",
+            "Contact Links": "={{ $json.contactLink }}",
+            "Guest Post Links": "={{ $json.guestPostLink }}",
+            "LinkedIn": "={{ $json.linkedin }}",
+            "Facebook": "={{ $json.facebook }}",
+            "Twitter": "={{ $json.twitter }}",
+            "Instagram": "={{ $json.instagram }}",
+            "YouTube": "={{ $json.youtube }}",
+            "Guest Post Found": "={{ $json.guestPostFound }}"
+          },
+          "matchingColumns": [
+            "Unique ID"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1664,
+        320
+      ],
+      "id": "REDACTED",
+      "name": "Duplicate Procetion (website +email)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1016946188,
+          "mode": "list",
+          "cachedResultName": "No Access",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Website": "=   Website: {{ $('Loop Over Items').item.json.website }}"
+          },
+          "matchingColumns": [
+            "Website"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2016,
+        288
+      ],
+      "id": "REDACTED",
+      "name": "Not Allowed Websites",
+      "retryOnFail": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        896,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website.startsWith('http') ? $json.website : 'https://' + $json.website }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 3
+            }
+          },
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1920,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "Extract Home Page",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.originalUrl }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 3
+            }
+          },
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1328,
+        16
+      ],
+      "id": "REDACTED",
+      "name": "Extract Specific Page",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED",
+              "name": "homeTitle",
+              "value": "={{ ($json.data.match(/<title>(.*?)<\\/title>/is) || [\"\", \"\"])[1].replace(/&amp;/g, \"&\").replace(/\\s+/g, \" \").trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "website",
+              "value": "={{ $('Page Fields').item.json.website }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "url",
+              "value": "={{ $('Page Fields').item.json.url }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "keyword",
+              "value": "={{ $('Page Fields').item.json.keyword }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "correlationId",
+              "value": "={{ $('Page Fields').item.json.correlationId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -16,
+        320
+      ],
+      "id": "REDACTED",
+      "name": "Home Page Title"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED",
+              "name": "website",
+              "value": "={{ $('Loop Over Items').item.json.website }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "url",
+              "value": "={{ $('Loop Over Items').item.json.originalUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "keyword",
+              "value": "={{ $('Loop Over Items').item.json.keyword }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED",
+              "name": "correlationId",
+              "value": "={{ $('Loop Over Items').item.json.correlationId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1536,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "Page Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Title: {{ $json['Brand Name'] }}\nLinkedIn: {{ $json.LinkedIn }}\nFacebook: {{ $json.Facebook }}\nDomain: {{ $json.Website }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are given a website's title, domain name, and social media links.\nExtract the actual brand/company name AND classify the website's industry/category.\n\nImportant:\n- If the title looks like a generic list of products/services (e.g. \"Job Board Software | Marketplace Software\"), IGNORE it for brand extraction.\n- Use the domain name and/or social media URLs (LinkedIn, Facebook) as the most reliable source, since they usually contain the actual brand/company name.\n\nFor Category:\n- Classify the website into ONE broad category based on the title, domain name, and content clues.\n- Use simple categories like: Tech, Health, Fashion, Finance, Education, Real Estate, Marketing, E-commerce, Travel, Food, Legal, Fitness, Beauty, Automotive, or \"Other\" if unclear.\n- Pick the single best-fit category, do not combine multiple.\n\nExamples:\nDomain: logicspice.com\nLinkedIn: https://www.linkedin.com/company/logicspice\nBrand: LogicSpice\nCategory: Tech\n\nDomain: eyesee-research.com\nTitle: \"EyeSee - Tech-enabled behavioral insights\"\nBrand: EyeSee\nCategory: Tech\n\nReturn the result in the specified JSON format only - no explanation, no extra text."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -16,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "AI Agent",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        816
+      ],
+      "id": "REDACTED",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REDACTED",
+          "name": "Google Gemini(PaLM) Api account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"Brand Name\": {\n      \"type\": \"string\",\n      \"description\": \"The extracted brand or company name\"\n    },\n    \"Category\": {\n      \"type\": \"string\",\n      \"description\": \"One broad industry category such as Tech, Health, Fashion, Finance, Education, Real Estate, Marketing, E-commerce, Travel, Food, Legal, Fitness, Beauty, Automotive, or Other\"\n    }\n  },\n  \"required\": [\"Brand Name\", \"Category\"],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        816
+      ],
+      "id": "REDACTED",
+      "name": "Structured Output Parser",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1801208510,
+          "mode": "list",
+          "cachedResultName": "Guest Post Not Found",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Website": "={{ $json.website }}",
+            "Brand Name": "={{ $json.brandName }}",
+            "Emails": "={{ $json.email }}",
+            "Contact Links": "={{ $json.guestPostLink }}",
+            "Guest Post Links": "={{ $json.guestPostLink }}",
+            "Guest Post Found": "={{ $json.guestPostFound }}",
+            "LinkedIn": "={{ $json.linkedin }}",
+            "Facebook": "={{ $json.facebook }}",
+            "Twitter": "={{ $json.twitter }}",
+            "Instagram": "={{ $json.instagram }}",
+            "YouTube": "={{ $json.youtube }}",
+            "Unique ID": "={{ $json.uniqueId }}"
+          },
+          "matchingColumns": [
+            "Unique ID"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sender Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        176
+      ],
+      "id": "REDACTED",
+      "name": "Guest post not found",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 170435720,
+          "mode": "list",
+          "cachedResultName": "Email not Found",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Unique ID": "={{ $json.uniqueId }}",
+            "Website": "={{ $json.website }}",
+            "Brand Name": "={{ $json.brandName }}",
+            "Emails": "={{ $json.email }}",
+            "Contact Links": "={{ $json.contactLink }}",
+            "Guest Post Links": "={{ $json.guestPostLink }}",
+            "Guest Post Found": "={{ $json.guestPostFound }}",
+            "LinkedIn": "={{ $json.linkedin }}",
+            "Facebook": "={{ $json.facebook }}",
+            "Twitter": "={{ $json.instagram }}",
+            "Instagram": "={{ $json.instagram }}",
+            "YouTube": "={{ $json.youtube }}"
+          },
+          "matchingColumns": [
+            "Unique ID"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        416
+      ],
+      "id": "REDACTED",
+      "name": "Email Not Found",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        16
+      ],
+      "id": "REDACTED",
+      "name": "Wait",
+      "webhookId": "REDACTED"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        0
+      ],
+      "id": "REDACTED",
+      "name": "Wait1",
+      "webhookId": "REDACTED"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.emailStatus }}",
+                    "rightValue": "guest_post_not_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED",
+                    "leftValue": "={{ $json.emailStatus }}",
+                    "rightValue": "email_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED",
+                    "leftValue": "={{ $json.emailStatus }}",
+                    "rightValue": "email_not_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        864,
+        304
+      ],
+      "id": "REDACTED",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        816,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "Wait2",
+      "webhookId": "REDACTED"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "AI Guest Post Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2030828432,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "={{ $json.labelIds[0] }}",
+            "Sent Date": "={{ $now.toFormat('yyyy-MM-dd') }}",
+            "Unique ID": "={{ $('Gmail Account Selection by 1 and 2').item.json['Unique ID'] }}",
+            "Sender Email": "={{ $('Gmail Account Selection by 1 and 2').item.json.senderEmail }}"
+          },
+          "matchingColumns": [
+            "Unique ID"
+          ],
+          "schema": [
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Brand Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Emails",
+              "displayName": "Emails",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Contact Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Links",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Guest Post Found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "LinkedIn",
+              "displayName": "LinkedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Facebook",
+              "displayName": "Facebook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Twitter",
+              "displayName": "Twitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "YouTube",
+              "displayName": "YouTube",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Unique ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proposal",
+              "displayName": "Proposal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Email Verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sent Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "Sender Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "REDACTED",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1984,
+        624
+      ],
+      "id": "REDACTED",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pull everything needed for the email from the earlier nodes of THIS loop iteration\nconst dup  = $('Duplicate Procetion (website +email)').item.json;\nconst prop = $('Propasal Generator').item.json;\n\n// Alternate between Gmail account \"1\" and \"2\"\nconst data = $getWorkflowStaticData('global');\nif (!data.gmailAccount) data.gmailAccount = \"1\";\nconst gmailAccount = data.gmailAccount;\n\nconst emailMap = {\n  \"1\": \"sender@example.com\",\n  \"2\": \"sender@example.com\"\n};\ndata.gmailAccount = gmailAccount === \"1\" ? \"2\" : \"1\";\n\nreturn {\n  json: {\n    \"Unique ID\": dup['Unique ID'],\n    \"Website\": dup['Website'] || prop['Website'] || '',\n    \"Emails\": dup['Emails'],\n    \"Brand Name\": prop['Brand Name'],\n    \"Proposal\": prop['Proposal'],\n    \"emailSubject\": prop['emailSubject'],\n    \"gmailAccount\": gmailAccount,\n    \"senderEmail\": emailMap[gmailAccount]\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "Gmail Account Selection by 1 and 2"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.gmailAccount}}",
+                    "rightValue": "1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED",
+                    "leftValue": "={{$json.gmailAccount}}",
+                    "rightValue": "2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1312,
+        608
+      ],
+      "id": "REDACTED",
+      "name": "Assign Gmail Acount numbers"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Emails }}",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.Proposal }}\n<!-- ============================================================\n     FAHEEM ABBAS - EMAIL SIGNATURE (HTML)\n     Paste this HTML into your n8n \"Send Email\" node body (HTML mode)\n     ============================================================ -->\n<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"font-family: Arial, Helvetica, sans-serif; color:#333333;\">\n  <tr>\n    <td style=\"border-left:3px solid #1a73e8; padding-left:16px; vertical-align:top;\">\n      <div style=\"font-size:16px; font-weight:bold; color:#111111; margin-bottom:2px;\">\n        Faheem Abbas\n      </div>\n      <div style=\"font-size:12.5px; color:#1a73e8; margin-bottom:6px; line-height:1.4;\">\n        AI Automation (n8n) | AI Agents  | Agentic Workflows | Ai-Powered SEO Automation Expert \n      </div>\n      <div style=\"font-size:12.5px; color:#555555; margin-bottom:6px;\">\n        Email:\n        <a href=\"mailto:sender@example.com\" style=\"color:#555555; text-decoration:none;\">\n          sender@example.com\n        </a>\n      </div>\n      <div style=\"font-size:12.5px;\">\n        <a href=\"https://www.linkedin.com/\"\n           style=\"color:#1a73e8; text-decoration:none; font-weight:bold; vertical-align:middle;\"\n           target=\"_blank\">\n          <img src=\"https://cdn-icons-png.flaticon.com/512/174/174857.png\"\n               alt=\"LinkedIn\"\n               width=\"16\" height=\"16\"\n               style=\"vertical-align:middle; margin-right:5px; border:0;\" />\n          Connect on LinkedIn\n        </a>\n      </div>\n    </td>\n  </tr>\n</table>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1696,
+        768
+      ],
+      "id": "REDACTED",
+      "name": "Gmail Account No.2 (contact.bluemoon)",
+      "webhookId": "REDACTED",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REDACTED",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Emails }}",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.Proposal }}\n<!-- ============================================================\n     FAHEEM ABBAS - EMAIL SIGNATURE (HTML)\n     Paste this HTML into your n8n \"Send Email\" node body (HTML mode)\n     ============================================================ -->\n<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"font-family: Arial, Helvetica, sans-serif; color:#333333;\">\n  <tr>\n    <td style=\"border-left:3px solid #1a73e8; padding-left:16px; vertical-align:top;\">\n      <div style=\"font-size:16px; font-weight:bold; color:#111111; margin-bottom:2px;\">\n        Faheem Abbas\n      </div>\n      <div style=\"font-size:12.5px; color:#1a73e8; margin-bottom:6px; line-height:1.4;\">\n       AI Automation (n8n) | AI Agents  | Agentic Workflows | Ai-Powered SEO Automation Expert \n      </div>\n      <div style=\"font-size:12.5px; color:#555555; margin-bottom:6px;\">\n        Email:\n        <a href=\"mailto:sender@example.com\" style=\"color:#555555; text-decoration:none;\">\n          sender@example.com\n        </a>\n      </div>\n      <div style=\"font-size:12.5px;\">\n        <a href=\"https://www.linkedin.com/\"\n           style=\"color:#1a73e8; text-decoration:none; font-weight:bold; vertical-align:middle;\"\n           target=\"_blank\">\n          <img src=\"https://cdn-icons-png.flaticon.com/512/174/174857.png\"\n               alt=\"LinkedIn\"\n               width=\"16\" height=\"16\"\n               style=\"vertical-align:middle; margin-right:5px; border:0;\" />\n          Connect on LinkedIn\n        </a>\n      </div>\n    </td>\n  </tr>\n</table>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        512
+      ],
+      "id": "REDACTED",
+      "name": "Gmail Account No.1 (outreach.bluemoon)",
+      "webhookId": "REDACTED",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REDACTED",
+          "name": "Gmail account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "website search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "website search": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Website Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Unique iD of Email for Duplication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unique iD of Email for Duplication": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter website+keyword+data": {
+      "main": [
+        [
+          {
+            "node": "Website Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status Email+propasal": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propasal Generator": {
+      "main": [
+        [
+          {
+            "node": "Update Status Email+propasal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Procetion (website +email)": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Not Allowed Websites": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Home Page": {
+      "main": [
+        [
+          {
+            "node": "Home Page Title",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Allowed Websites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Specific Page": {
+      "main": [
+        [
+          {
+            "node": "Page Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Allowed Websites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Home Page Title": {
+      "main": [
+        [
+          {
+            "node": "Filter website+keyword+data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Page Fields": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Propasal Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guest post not found": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Not Found": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Extract Specific Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Extract Home Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Guest post not found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate Procetion (website +email)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Gmail Account Selection by 1 and 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Account Selection by 1 and 2": {
+      "main": [
+        [
+          {
+            "node": "Assign Gmail Acount numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Gmail Acount numbers": {
+      "main": [
+        [
+          {
+            "node": "Gmail Account No.1 (outreach.bluemoon)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail Account No.2 (contact.bluemoon)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Account No.2 (contact.bluemoon)": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Account No.1 (outreach.bluemoon)": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "REDACTED",
+  "meta": {
+    "instanceId": "REDACTED"
+  },
+  "id": "REDACTED",
+  "tags": []
+}
