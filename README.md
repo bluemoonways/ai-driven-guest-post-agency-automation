@@ -4,570 +4,484 @@
 
 ## 📌 Overview
 
-This project is a real-world **Off-Page SEO and Guest Post Outreach Automation System** built with **n8n, AI, Google Sheets, Gemini, and Gmail**.
+This project is a real-world **Off-Page SEO and Guest Post Outreach Automation System** built with **n8n, Google Gemini, Google Sheets, Gmail, and automated web research**.
 
-The goal was not simply to automate one task.
+It was developed to solve a practical business problem: a Guest Post / Off-Page SEO manager repeatedly performing the same prospect research, qualification, contact discovery, proposal writing, email sending, and tracking tasks.
 
-The goal was to automate an entire repetitive workflow that an Off-Page SEO / Guest Post manager would otherwise have to perform manually — from finding potential websites to researching them, identifying guest post opportunities, extracting contact information, checking duplicates, generating personalized outreach proposals, sending emails, and tracking the outreach status.
-
-The workflow transforms a time-consuming manual process into an automated, repeatable pipeline.
+Instead of automating only one step, this workflow automates the complete prospect-processing pipeline while filtering out websites that should never reach the outreach stage.
 
 ---
 
-## 🎯 The Real-World Problem
+# 🎯 Real-World Problem
 
-Guest Post outreach involves a large number of repetitive tasks.
+Guest post outreach is not simply about sending emails.
 
-A typical manual process requires an SEO manager to:
+Before a single outreach email can be sent, an SEO professional may have to:
 
-- Search for websites related to a target keyword or niche
-- Open and inspect potential websites
-- Find relevant guest post pages
-- Extract website and contact information
-- Identify email addresses
-- Check whether the website has already been contacted
-- Check whether the same email has already been used
-- Research the website and understand its niche
-- Categorize the website
-- Write a suitable outreach proposal
-- Create different email subject lines
-- Send outreach emails individually
-- Wait between emails
-- Manage multiple sender accounts
-- Record which account sent each email
-- Update outreach status
-- Record the sending date
-- Move to the next prospect
+- Search Google for relevant websites
+- Open and analyze prospect websites
+- Look for guest posting opportunities
+- Check whether the website should be considered
+- Find contact information
+- Extract email addresses
+- Check existing records for duplicates
+- Identify the website's niche
+- Write a personalized outreach proposal
+- Prepare a relevant subject line
+- Send the email
+- Record the outreach status
+- Repeat the entire process for the next prospect
 
-When performed manually across hundreds of prospects, these activities become highly repetitive and time-consuming.
+When hundreds of search results are involved, most of the work becomes repetitive.
 
-### The Core Problem
+More importantly, **not every website discovered through search is a valid outreach prospect**.
 
-**The SEO manager was spending valuable time on repetitive operational work instead of focusing on higher-value SEO and outreach decisions.**
+Some websites should be excluded, some do not offer guest posting opportunities, and some do not expose a usable email address.
 
-This project was built to remove those repetitive steps from the process.
+Manually investigating all of these possibilities consumes significant operational time even though many prospects will ultimately be rejected.
 
 ---
 
-# 💡 The Automation Solution
+# 💡 The Solution
 
-The solution is an end-to-end **AI-powered n8n automation pipeline**.
+This project converts that repetitive manual process into an automated **n8n prospect qualification and outreach pipeline**.
 
-Instead of manually processing every prospect, the system takes a keyword file as input and processes prospects through a structured workflow.
+The workflow does not blindly send an email to every website it discovers.
 
-### Automated Pipeline
+Instead, every prospect moves through multiple research, extraction, filtering, and qualification stages.
 
 ```text
-Keyword Input
+Keyword File
      ↓
-Website Discovery
+Search for Potential Websites
      ↓
-Prospect Processing
+Process Prospect
      ↓
-Website Crawling / Page Extraction
+Website / Page Extraction
      ↓
-Guest Post Opportunity Detection
+Website Analysis & Qualification
      ↓
-Contact & Email Extraction
-     ↓
-Duplicate Protection
-     ↓
-AI Website / Niche Analysis
-     ↓
-AI Classification
-     ↓
-Personalized Proposal Generation
-     ↓
-Google Sheets Database Update
-     ↓
-Controlled Wait
-     ↓
-Gmail Account Rotation
-     ↓
-Email Delivery
-     ↓
-Outreach Status Update
-     ↓
-Next Prospect
+ ┌───────────────────────────────┐
+ │        Prospect Result        │
+ └───────────────────────────────┘
+          ↓
+ ┌────────┼──────────┬───────────────┐
+ ↓        ↓          ↓               ↓
+Not      Guest      Email        Qualified
+Allowed  Post Not   Not Found    Prospect
+         Found                         ↓
+ ↓        ↓          ↓             AI Analysis
+Skip     Skip       Skip              ↓
+                               Proposal Generation
+                                      ↓
+                               Database Update
+                                      ↓
+                                15-sec Wait
+                                      ↓
+                              Gmail Selection
+                                      ↓
+                                Send Email
+                                      ↓
+                              Update Tracking
+                                      ↓
+                                Next Prospect
 ```
 
----
+This filtering architecture is important because **search result ≠ outreach email**.
 
-# 🤖 What the AI Agent Does
-
-The workflow uses a **Google Gemini Chat Model** connected to an n8n **AI Agent** with a structured output parser.
-
-The AI layer helps analyze the collected website information and generate structured information used for outreach.
-
-The workflow then passes the AI-generated information into the proposal generation stage.
-
-### AI Processing Includes
-
-- Website / brand analysis
-- Niche or category classification
-- Brand name extraction
-- Structured AI output
-- Information used for personalized outreach
-- Proposal generation
+Only prospects that successfully pass the required workflow conditions continue toward proposal generation and email delivery.
 
 ---
 
-# ✉️ Personalized Outreach Generation
+# 🔍 Intelligent Prospect Filtering
 
-Instead of sending the same generic message to every website, the workflow generates proposals using multiple templates.
+One of the most important parts of the automation is deciding which prospects should continue through the workflow.
 
-The proposal generator dynamically uses information such as:
+The system contains separate handling paths for different outcomes.
 
-- Brand name
+### 🚫 Not Allowed Website
+
+If a website falls into the workflow's excluded/not-allowed conditions, it does not continue through the normal outreach pipeline.
+
+### ❌ Guest Post Not Found
+
+A website may be valid and accessible but still not provide the guest posting opportunity the workflow is looking for.
+
+That prospect is handled separately and the workflow continues with the next item.
+
+### 📭 Email Not Found
+
+A website may appear suitable for outreach, but the automation may fail to discover a usable email address.
+
+Instead of attempting to send an email, the prospect is recorded/handled through the **Email Not Found** path and processing continues.
+
+### ✅ Qualified / Email Found
+
+Only a prospect that satisfies the required conditions and provides the necessary outreach information continues to the AI and proposal-generation stages.
+
+This means the system spends the email-sending stage only on prospects that successfully reach that part of the pipeline.
+
+---
+
+# 🤖 AI-Powered Website Classification
+
+Qualified prospect information is passed to a **Google Gemini Chat Model** through an n8n AI Agent.
+
+A Structured Output Parser helps return information in a predictable format.
+
+The AI stage assists with information such as:
+
+- Brand identification
+- Website understanding
+- Niche/category classification
+- Structured prospect information
+
+The resulting information is then passed to the proposal-generation stage.
+
+---
+
+# ✍️ Personalized Proposal Generation
+
+Once a qualified prospect reaches the outreach stage, the workflow automatically generates its proposal.
+
+The Proposal Generator uses prospect information such as:
+
 - Website/domain
-- Website category/niche
+- Brand name
+- Website niche/category
 
-It also generates multiple subject-line variations, including collaboration and guest-post related subjects.
+Multiple proposal templates and subject-line variations are available rather than relying on one identical email format for every prospect.
 
-This helps make the outreach process more structured and less dependent on manually writing every email.
+The result includes:
 
----
+```text
+Qualified Prospect
+        ↓
+Gemini Analysis
+        ↓
+Brand + Category
+        ↓
+Proposal Generator
+       ↙   ↘
+  Subject   Personalized
+   Line       Proposal
+```
 
-# 🔎 Website & Prospect Research
-
-The workflow processes potential websites and extracts relevant information from both homepage and specific pages.
-
-The automation includes processing stages for:
-
-- Homepage extraction
-- Specific page extraction
-- Page field extraction
-- Website filtering
-- Guest post opportunity detection
-- Contact information extraction
-- Social profile information
-- Website analysis
-
-Websites that do not meet the workflow's conditions can be routed away from the main outreach process.
+Only prospects that have successfully passed the preceding qualification stages reach this process.
 
 ---
 
 # 🛡️ Duplicate Protection
 
-One of the important problems in outreach is accidentally contacting the same prospect more than once.
+Repeatedly contacting the same website or email address is another common problem in manual outreach.
 
-This workflow includes a dedicated duplicate protection stage based on **website + email** information.
-
-A unique identifier is generated for the prospect and used to help prevent duplicate outreach.
+The workflow includes dedicated **website + email duplicate protection** and Unique ID handling.
 
 ```text
 Website + Email
        ↓
-Unique ID
+Create / Check Unique ID
        ↓
-Duplicate Check
+Duplicate Protection
        ↓
-Already Contacted?
-   ↙          ↘
- YES           NO
- ↓             ↓
-Skip        Continue
-             ↓
-          AI Analysis
+Eligible Prospect
+       ↓
+Continue Processing
 ```
 
-The workflow also stores a **Unique ID** in the Google Sheets database for tracking and matching.
+This reduces unnecessary repeated outreach and makes the prospect database easier to manage.
 
 ---
 
-# ⏱️ Controlled Outreach
+# 📊 Centralized Google Sheets Tracking
 
-The system does not immediately send every generated email one after another.
+Google Sheets acts as the outreach database for the automation.
 
-A dedicated **Wait2** node introduces a **15-minute wait** before the email-account selection and sending stage.
+Depending on the prospect and workflow path, the system can maintain information such as:
 
-This creates a controlled outreach flow instead of processing every prospect as an immediate email action.
+- Website
+- Brand Name
+- Email
+- Contact Links
+- Guest Post Links
+- Guest Post status
+- Social profiles
+- Category
+- Unique ID
+- Proposal
+- Outreach Status
+- Sent Date
+- Sender Email
 
-Additional wait stages are also present during website processing.
+Different outcomes can therefore be handled without forcing every discovered website into the email-sending stage.
+
+---
+
+# ⏱️ Controlled Processing & Natural Email Gap
+
+The email-delivery logic is designed so that emails are **not fired for every search result one after another**.
+
+There are two reasons for this.
+
+## 1. Prospect Processing Creates Natural Time Between Emails
+
+After one prospect is processed, the workflow must continue processing subsequent search results.
+
+Those results may require:
+
+- Website/page extraction
+- Data processing
+- Qualification
+- Guest post checking
+- Contact discovery
+- Duplicate checking
+- AI analysis
+- Proposal generation
+
+And many results never reach email sending at all.
+
+For example:
+
+```text
+Email Sent to Prospect A
+          ↓
+Process Next Search Result
+          ↓
+Not Allowed
+          ↓
+Process Next Search Result
+          ↓
+Guest Post Not Found
+          ↓
+Process Next Search Result
+          ↓
+Email Not Found
+          ↓
+Process Next Search Result
+          ↓
+Qualified + Email Found
+          ↓
+Generate Proposal
+          ↓
+15-second Wait
+          ↓
+Send Next Email
+```
+
+Therefore, the real interval between two sent emails can naturally be **longer than 15 seconds**, because the workflow performs research and qualification work between successful outreach prospects.
+
+## 2. Additional 15-Second Wait Before Sending
+
+For a prospect that reaches the outreach stage, the workflow contains an additional **15-second Wait node** before Gmail account selection.
+
+```text
+Proposal Generated
+       ↓
+Database Updated
+       ↓
+Wait 15 Seconds
+       ↓
+Select Gmail Account
+       ↓
+Send Email
+```
+
+The 15 seconds should therefore **not be interpreted as “one email every 15 seconds.”**
+
+It is an additional controlled pause inside a larger sequential workflow.
+
+The actual gap between two sent emails depends on how many prospects are processed, rejected, analyzed, or skipped between successful email-found prospects.
 
 ---
 
 # 📧 Multi-Account Gmail Rotation
 
-The workflow supports multiple Gmail sender accounts.
-
-A dedicated account-selection stage maintains a global counter and alternates between the configured sender accounts.
+After the qualified prospect passes the wait stage, the workflow selects between configured Gmail accounts.
 
 ```text
-              Prospect Ready
-                    ↓
-              15-Minute Wait
-                    ↓
-          Gmail Account Selector
-              ↙            ↘
-       Account 1          Account 2
-           ↓                  ↓
-       Gmail Send          Gmail Send
-              ↘            ↙
-             Tracking
+Qualified Prospect
+        ↓
+Proposal Ready
+        ↓
+15-Second Wait
+        ↓
+Gmail Account Selection
+       ↙           ↘
+ Account 1       Account 2
+     ↓               ↓
+ Send Email       Send Email
+       ↘           ↙
+       Update Status
+             ↓
+       Next Prospect
 ```
 
-This allows the workflow to distribute outreach across configured sender accounts rather than relying on a single sender.
-
-The workflow then routes the selected account through a Switch node to the corresponding Gmail sending node.
-
-> **Important:** The public GitHub version should use placeholder Gmail accounts and credentials. Real email addresses, OAuth credentials, Google Sheet IDs, tokens, and other private identifiers must not be committed to the repository.
+The account-selection logic alternates the configured sender accounts so outreach does not depend on only one Gmail connection.
 
 ---
 
-# 📊 Google Sheets as Outreach Database
+# 🔄 Complete End-to-End Workflow
 
-Google Sheets is used as the central tracking database.
+## 1. Upload Keyword File
 
-The workflow stores information such as:
+The workflow starts through the **AI Outreach Manager** form where a keyword file is provided.
 
-- Website
-- Brand Name
-- Email
-- Contact links
-- Guest post information
-- Social profiles
-- Category
-- Unique ID
-- Proposal
+## 2. Search Potential Websites
+
+The keyword data is used to discover potential Guest Post / Off-Page SEO prospects.
+
+## 3. Process Search Results
+
+The workflow processes discovered websites individually.
+
+## 4. Extract Website Data
+
+Relevant pages and homepage information are extracted and analyzed.
+
+## 5. Filter Invalid / Not Allowed Websites
+
+Prospects that should not continue are excluded from the main outreach pipeline.
+
+## 6. Detect Guest Post Opportunity
+
+The system evaluates whether the required guest post opportunity is present.
+
+If not, the prospect follows the **Guest Post Not Found** path.
+
+## 7. Extract Contact Information
+
+The automation attempts to locate relevant contact information and email addresses.
+
+If no usable email is found, the prospect follows the **Email Not Found** path.
+
+## 8. Protect Against Duplicates
+
+Website/email information and Unique IDs are used to avoid unnecessary duplicate processing/outreach.
+
+## 9. Analyze Qualified Prospect with AI
+
+Qualified prospect information is passed to the Gemini-powered AI Agent for structured analysis and classification.
+
+## 10. Generate Personalized Proposal
+
+The workflow generates the outreach proposal and email subject.
+
+## 11. Update Prospect Database
+
+Relevant prospect and proposal information is stored/updated in Google Sheets.
+
+## 12. Wait 15 Seconds
+
+Before Gmail account selection, an additional 15-second pause is introduced.
+
+## 13. Select Gmail Sender
+
+The account-rotation logic determines which configured Gmail account should send the email.
+
+## 14. Send Outreach Email
+
+The personalized proposal is delivered through the selected Gmail account.
+
+## 15. Update Sending Record
+
+After sending, the workflow updates the prospect record with information including:
+
 - Status
 - Sent Date
+- Unique ID
 - Sender Email
 
-After an email is sent, the workflow updates the corresponding record using the Unique ID.
+## 16. Continue to Next Prospect
 
-The post-send tracking stage records the status, sending date, Unique ID and sender email.
+The workflow returns to the loop and begins processing the next search result.
 
----
-
-# 🔄 End-to-End Workflow
-
-## 1. Keyword Input
-
-The process begins with a form where a keyword file can be uploaded.
-
-The uploaded file is then extracted and passed into the search stage.
-
-## 2. Website Discovery
-
-The workflow searches for potential websites based on the provided keyword data.
-
-## 3. Prospect Processing
-
-Each discovered prospect is processed individually through the workflow loop.
-
-## 4. Website Analysis
-
-The automation extracts relevant website and page information.
-
-## 5. Guest Post Qualification
-
-The workflow checks whether a suitable guest post opportunity exists.
-
-If a suitable opportunity cannot be identified, the prospect is routed to a separate handling path.
-
-## 6. Contact Discovery
-
-The workflow attempts to identify relevant contact information and email addresses.
-
-If an email cannot be found, the prospect is handled separately instead of continuing to the outreach stage.
-
-## 7. Duplicate Protection
-
-The system checks the prospect against existing records before continuing.
-
-## 8. AI Analysis
-
-The qualified prospect is passed to the Gemini-powered AI Agent.
-
-## 9. Proposal Generation
-
-A personalized proposal and subject line are generated.
-
-## 10. Database Update
-
-The prospect and generated outreach information are stored/updated in Google Sheets.
-
-## 11. Controlled Wait
-
-The workflow waits 15 minutes before proceeding to email account selection.
-
-## 12. Sender Account Selection
-
-The workflow selects the next configured Gmail account.
-
-## 13. Email Sending
-
-The proposal is sent through the selected Gmail account.
-
-## 14. Outreach Tracking
-
-The Google Sheets record is updated with sending information.
-
-## 15. Continue Processing
-
-The workflow returns to the processing loop and continues with the next prospect.
+The next result may be rejected or may eventually become the next successful outreach email.
 
 ---
 
-# 🧩 Key Automation Features
+# 🔁 What Was Manual vs What Is Automated
 
-| Feature | Purpose |
+| Repetitive Manual Task | Automated Solution |
 |---|---|
-| Keyword File Input | Start outreach from a keyword list |
-| Website Discovery | Find potential guest post prospects |
-| Website Crawling | Collect relevant website information |
-| Guest Post Detection | Identify potential guest posting opportunities |
-| Contact Extraction | Find relevant contact information |
-| Duplicate Protection | Reduce repeated outreach |
-| Unique ID | Track each prospect |
-| Gemini AI Agent | Analyze and classify prospects |
-| Structured Output | Keep AI results organized |
-| Proposal Generator | Create outreach proposals |
-| Subject Variations | Generate different outreach subjects |
-| Google Sheets | Maintain outreach database |
-| 15-Minute Wait | Control outreach timing |
-| Gmail Rotation | Alternate configured sender accounts |
-| Email Sending | Execute actual outreach |
-| Post-Send Tracking | Record sender and sending status |
-| Loop Processing | Continue automatically with next prospects |
-
----
-
-# 🔧 Technology Stack
-
-- **n8n** — Workflow orchestration and automation
-- **Google Gemini** — AI-powered analysis and classification
-- **Google Sheets** — Prospect database and tracking
-- **Gmail** — Automated outreach delivery
-- **HTTP Requests / Web Data Extraction** — Website discovery and processing
-- **n8n Code Nodes** — Data transformation, IDs, proposal generation and workflow logic
-- **Structured Output Parser** — Structured AI responses
-
----
-
-# 📈 Before vs After
-
-## Before — Manual Process
-
-```text
-Search Websites
-     ↓
-Open Website
-     ↓
-Find Guest Post Page
-     ↓
-Find Email
-     ↓
-Research Website
-     ↓
-Check Previous Outreach
-     ↓
-Write Proposal
-     ↓
-Write Subject
-     ↓
-Send Email
-     ↓
-Wait
-     ↓
-Select Sender Account
-     ↓
-Update Spreadsheet
-     ↓
-Repeat
-```
-
-Every prospect requires repeated manual actions.
-
----
-
-## After — Automated Process
-
-```text
-Upload Keywords
-       ↓
-        n8n
-       ↓
-Website Discovery
-       ↓
-Research & Extraction
-       ↓
-Qualification
-       ↓
-Duplicate Protection
-       ↓
-Gemini AI
-       ↓
-Proposal Generation
-       ↓
-Google Sheets
-       ↓
-15-Minute Control
-       ↓
-Gmail Rotation
-       ↓
-Email Sending
-       ↓
-Automatic Tracking
-       ↓
-Next Prospect
-```
-
-The repetitive operational workload is moved from manual execution into an automated workflow.
+| Search websites manually | Automated website discovery |
+| Open prospect websites | Automated page processing |
+| Inspect website pages | Automated extraction |
+| Identify unsuitable websites | Not Allowed filtering |
+| Check guest post availability | Automated qualification |
+| Find contact details | Automated extraction |
+| Find email addresses | Automated email discovery |
+| Handle missing emails | Email Not Found branch |
+| Check previous prospects | Duplicate protection |
+| Understand website niche | Gemini AI classification |
+| Write outreach proposal | Automated proposal generation |
+| Create subject line | Automated subject generation |
+| Maintain prospect database | Google Sheets automation |
+| Control sending sequence | Sequential workflow + wait |
+| Select sender account | Gmail account rotation |
+| Send email manually | Automated Gmail delivery |
+| Record sending date | Automatic tracking |
+| Record sender account | Automatic tracking |
+| Repeat for next website | Automated loop |
 
 ---
 
 # 💼 Real-World Business Value
 
-This automation was designed around a practical business problem:
+The value of this project is not simply that **“it can send emails.”**
 
-> **How can a Guest Post / Off-Page SEO manager process a large volume of outreach prospects without manually repeating the same research, writing, sending and tracking tasks for every prospect?**
+Its real value is that it automates the repetitive work that happens **before and after** an outreach email.
 
-The solution creates a repeatable system that can:
+Instead of an Off-Page SEO manager repeatedly performing:
 
-- Reduce repetitive manual research
-- Reduce repetitive data-entry work
-- Automate prospect qualification
-- Automate duplicate checking
-- Automate AI-based classification
-- Automate proposal drafting
-- Automate email delivery
-- Automate sender-account selection
-- Automate outreach tracking
-- Allow the SEO manager to focus more on strategy and decision-making
+**Search → Research → Filter → Extract → Check → Classify → Write → Send → Record → Repeat**
 
----
+the automation performs the operational pipeline and routes each prospect according to its actual result.
 
-# 🏗️ Architecture
+The human operator can therefore spend less time performing repetitive prospect-by-prospect operations and more time on higher-level activities such as:
 
-```text
-                 ┌───────────────────┐
-                 │   Keyword Input   │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Website Discovery │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Website Extraction│
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Qualification     │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Duplicate Check   │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Gemini AI Agent   │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Proposal Generator│
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │  Google Sheets    │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ 15-Minute Wait    │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Gmail Account      │
-                 │ Selection/Rotation │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │   Gmail Sending   │
-                 └─────────┬─────────┘
-                           ↓
-                 ┌───────────────────┐
-                 │ Outreach Tracking │
-                 └─────────┬─────────┘
-                           ↓
-                      Next Prospect
-```
+- SEO strategy
+- Outreach strategy
+- Relationship building
+- Campaign decisions
+- Reviewing qualified opportunities
+- Improving campaign quality
 
 ---
 
-# 🔐 Security & Sanitization
+# 🧰 Technology Stack
 
-The original production workflow contains configuration-specific information such as:
+- **n8n** — Workflow orchestration
+- **Google Gemini** — AI analysis and niche classification
+- **Google Sheets** — Prospect and outreach database
+- **Gmail** — Outreach email delivery
+- **HTTP / Web Processing** — Prospect discovery and website extraction
+- **JavaScript / n8n Code Nodes** — Workflow logic and data transformation
+- **Structured Output Parser** — Structured AI responses
 
-- OAuth credential references
-- Google Sheet identifiers
-- Gmail account information
-- Workflow identifiers
-- Private configuration values
+---
 
-These should **not** be exposed in a public repository.
+# 🔐 Security
 
-The GitHub version should therefore contain a sanitized workflow with placeholders.
+The production workflow contains environment-specific configuration and credential references.
 
-Example:
+For a public GitHub repository, sensitive information should be replaced with placeholders such as:
 
 ```text
 YOUR_GOOGLE_SHEET_ID
 YOUR_GEMINI_CREDENTIAL
-YOUR_GMAIL_CREDENTIAL
-YOUR_SENDER_EMAIL
+YOUR_GMAIL_ACCOUNT_1
+YOUR_GMAIL_ACCOUNT_2
 YOUR_API_KEY
 ```
 
-Credentials should be configured inside n8n rather than hard-coded into the workflow.
+Never commit:
 
----
-
-# 🚀 Setup
-
-## Requirements
-
-Before running the workflow, you will need:
-
-1. n8n
-2. Google Sheets account
-3. Gmail account(s)
-4. Gemini API / Google AI configuration
-5. Search/API configuration used by the workflow
-6. A keyword input file
-7. A Google Sheet configured according to the workflow fields
-
-## Basic Setup
-
-```text
-1. Import the sanitized workflow into n8n
-2. Configure required credentials
-3. Configure Google Sheets
-4. Configure Gemini
-5. Configure Gmail sender accounts
-6. Configure required API/search credentials
-7. Review the workflow settings
-8. Upload keyword file
-9. Execute the workflow
-```
-
----
-
-# ⚠️ Production Considerations
-
-This repository is intended to demonstrate the **automation architecture and engineering approach**.
-
-Before deploying in a production environment:
-
-- Configure your own credentials
-- Replace placeholder IDs
-- Review email sending limits
-- Follow applicable email and anti-spam requirements
-- Respect website terms and applicable data-protection requirements
-- Review prospect qualification rules
-- Test the workflow with a small dataset first
-- Monitor email delivery and outreach status
+- API keys
+- OAuth secrets
+- Access tokens
+- Private credential IDs
+- Production email credentials
+- Other confidential configuration
 
 ---
 
@@ -577,66 +491,69 @@ Before deploying in a production environment:
 ai-driven-guest-post-agency-automation/
 │
 ├── README.md
-│
 ├── workflow/
 │   └── guest-post-outreach-sanitized.json
-│
 ├── docs/
 │   └── workflow-diagram.png
-│
 └── .gitignore
 ```
 
 ---
 
+# 🚀 Setup
+
+1. Import the sanitized workflow JSON into n8n.
+2. Configure the required search/API credentials.
+3. Connect Google Gemini.
+4. Configure the required Google Sheet.
+5. Connect the Gmail sender accounts.
+6. Replace placeholder configuration values.
+7. Test the workflow with a small keyword dataset.
+8. Review qualification and outreach rules before production use.
+9. Activate the workflow when configuration is complete.
+
+---
+
+# ⚠️ Responsible Use
+
+This project demonstrates the automation architecture used for legitimate Off-Page SEO outreach.
+
+Users deploying it should configure appropriate prospect-selection rules, respect applicable email and data-protection requirements, follow provider sending limits, and avoid unsolicited bulk-email behavior.
+
+---
+
 # 🎓 What This Project Demonstrates
 
-This project demonstrates practical experience with:
+This real-world project demonstrates practical experience in:
 
-- n8n workflow automation
-- AI Agent integration
-- Gemini LLM integration
+- AI workflow automation
+- n8n workflow development
+- Multi-step business process automation
+- Web research automation
+- Data extraction and transformation
+- Conditional workflow routing
+- Prospect qualification
+- Duplicate protection
+- AI Agent implementation
+- Google Gemini integration
 - Structured AI output
-- Web data extraction
-- Conditional workflow logic
-- Data transformation with JavaScript
-- Duplicate detection
-- Unique ID generation
+- Personalized content generation
 - Google Sheets automation
 - Gmail automation
-- Multi-account workflow routing
-- Rate-controlled processing
-- Automated outreach
-- End-to-end business process automation
+- Multi-account routing
+- Sequential processing
+- Outreach tracking
 
 ---
 
-# 🌐 Project Focus
+# ⭐ Core Automation Principle
 
-**Domain:** Off-Page SEO / Guest Post Outreach
+> **Don't automate only the final task — automate the repetitive process that leads to it.**
 
-**Automation Type:** AI + Workflow Automation
+This project does not simply automate email sending.
 
-**Platform:** n8n
+It automates the operational journey from:
 
-**AI:** Google Gemini
+**Keyword → Prospect Discovery → Website Research → Qualification → Contact Discovery → Duplicate Protection → AI Classification → Proposal Generation → Controlled Sending → Tracking → Next Prospect**
 
-**Database:** Google Sheets
-
-**Communication:** Gmail
-
-**Primary Goal:** Automate repetitive Guest Post prospecting, research, personalization, outreach and tracking tasks.
-
----
-
-## ⭐ Project Philosophy
-
-This project follows a simple automation principle:
-
-> **Don't automate just one task — automate the repetitive process around the task.**
-
-Instead of creating an automation that only finds websites or only sends emails, this system connects the major operational stages into one continuous workflow.
-
-**Input → Research → Qualification → AI → Personalization → Outreach → Tracking → Next Prospect**
-
-That is what turns an individual automation into a practical business workflow.
+That is the real-world problem this automation was built to solve.
