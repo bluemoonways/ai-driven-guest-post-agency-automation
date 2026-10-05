@@ -1,4 +1,4 @@
-# AI-Driven Outreach Agency Automation
+# AI-Driven Agency Outreach Automation
 
 > **Replaces weeks of manual Off-Page SEO outreach with a full-stack autonomous n8n AI agent. Crawls prospect domains, classifies niches via Gemini LLM, drafts customized pitches, and balances multi-account Gmail delivery.**
 
